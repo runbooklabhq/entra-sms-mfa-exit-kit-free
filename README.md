@@ -9,6 +9,7 @@ This kit is the first five steps as a ready-to-run project:
 | `entra-sms-mfa-exit-kit-top-5-guide.md` | Why, steps, check, verify, licence and effort for each step |
 | `entra-sms-mfa-exit-kit-top-5-jira-import.csv` | Jira Cloud import: epics + stories with parent links, priority, sprint and labels |
 | `entra-sms-mfa-exit-kit-top-5-tracker.csv` | Same backlog for Planner, Azure DevOps, Excel or Linear |
+| `entra-sms-mfa-exit-kit-top-5-project-plan.xlsx` | Excel project plan for teams without Jira: owner, dates, status drop-down, % complete and a progress dashboard by area and sprint |
 | `entra-sms-mfa-exit-kit-top-5-readonly-checks.ps1` | Get-* only. Changes nothing. Writes `hardening-check-results.csv` and `phone-only-users.csv` |
 
 Steps: list phone-only users · see where SMS/voice is enabled · enable passkeys · run a registration campaign · tell users in three waves.
