@@ -1,74 +1,104 @@
-Issue ID,Issue Type,Summary,Description,Priority,Parent,Sprint,Labels
-1,Epic,Entra SMS MFA Exit Kit: Find who is affected,Entra SMS MFA Exit Kit - Top 5,High,,,sms-mfa-exit
-2,Epic,Entra SMS MFA Exit Kit: Move users to passkeys,Entra SMS MFA Exit Kit - Top 5,High,,,sms-mfa-exit
-3,Story,[S01] List the users whose only MFA method is SMS or voice,"Why: These are the users who will hit the blocking passkey prompt on the retirement date. Microsoft-provided SMS and voice authentication retires on 1 February 2027 for all users except Global Administrators and external users (internal guests are in scope), and on 1 July 2027 for Global Administrators and external users (MC1519855; Microsoft Learn, 'Passkeys by default and retirement of Microsoft-provided SMS and voice authentication'). After the date, users whose only MFA method is SMS or voice get a blocking prompt to register a passkey. There is no opt-out for enforcement.
+Issue ID,Issue Type,Summary,Description,Priority,Parent,Due date,Labels,Labels,Labels,Labels,Labels
+1,Epic,Entra SMS MFA Exit Kit: Find who is affected,Entra SMS MFA Exit Kit - Top 5,High,,,runbooklab,rl-entra-sms-mfa-exit-kit,find,,
+2,Epic,Entra SMS MFA Exit Kit: Move users to passkeys,Entra SMS MFA Exit Kit - Top 5,High,,,runbooklab,rl-entra-sms-mfa-exit-kit,move,,
+3,Task,[SM01] List the users whose only MFA method is SMS or voice,"Why: These are the users who will hit the blocking passkey prompt on the retirement date. Microsoft-provided SMS and voice authentication retires on 1 February 2027 for all users except Global Administrators and external users (internal guests are in scope), and on 1 July 2027 for Global Administrators and external users (Microsoft Learn, 'Passkeys by default and retirement of Microsoft-provided SMS and voice authentication', and message center post MC1426371 state both dates). The July date applies only while the Global Administrator role is active: users who are only eligible for it (for example in PIM) follow 1 February 2027. After the date, users whose only MFA method is SMS or voice get a blocking prompt to register a passkey. There is no opt-out for enforcement.
 
 Steps:
-# Run the read-only check below (Microsoft Graph user registration details report). It exports phone-only-users.csv.
-# Alternatively, in the Entra admin center go to Entra ID > Authentication methods > Activity and filter the user registration details by methods registered.
-# Put the phone-only users in a security group (for example 'SMS-Voice-Exit'). You will target this group in S03 and S04.
-# Write the count in your tracker. Re-run weekly until it reaches zero.
+# Run the read-only check below (Microsoft Graph user registration details report). It exports phone-only-users.csv: users with a phone method and no method other than phone, email or security questions.
+# Or in the Entra admin center go to Entra ID > Authentication methods > Activity > Registration tab > Users registered by authentication method, and open the phone methods to see who registered them.
+# Put the phone-only users in a security group (for example 'SMS-Voice-Exit'). You will target this group in SM03 and SM04.
+# Write the count in your tracker, split into Global Administrators with an active role and external users (due 1 July 2027) and everyone else, internal guests included (due 1 February 2027). Re-run weekly until it reaches zero.
+
+Impact: Nothing changes in the tenant: the report and the export are read-only. Creating the SMS-Voice-Exit group changes nothing for users until a policy or campaign targets it.
+
+Rollback: Nothing to undo for the report. Delete the SMS-Voice-Exit group (or remove its members) and delete phone-only-users.csv when you no longer need it.
 
 Check (read-only):
 {code:powershell}
-$r = @(Get-MgReportAuthenticationMethodUserRegistrationDetail -All); $ph = @('mobilePhone','alternateMobilePhone','officePhone'); $weak = @('mobilePhone','alternateMobilePhone','officePhone','email','securityQuestion'); $only = @($r | Where-Object { $m = @($_.MethodsRegistered); ($m | Where-Object { $ph -contains $_ }).Count -gt 0 -and ($m | Where-Object { $weak -notcontains $_ }).Count -eq 0 }); ""Users in registration report: $($r.Count)""; ""Phone-only users (SMS/voice is their only MFA method): $($only.Count)""; ""  of which admins: $(@($only | Where-Object { $_.IsAdmin }).Count)""; ""  of which guests: $(@($only | Where-Object { $_.UserType -eq 'guest' }).Count)""; $only | Select-Object UserPrincipalName, UserType, IsAdmin, @{n='Methods';e={$_.MethodsRegistered -join ';'}} | Export-Csv -NoTypeInformation -Encoding UTF8 .\phone-only-users.csv; 'Exported .\phone-only-users.csv'
+$r = @(Get-MgReportAuthenticationMethodUserRegistrationDetail -All); $ph = { param($m) @($m | Where-Object { $_ -match 'phone' }).Count -gt 0 -and @($m | Where-Object { $_ -notmatch 'phone' -and $_ -notin 'email','securityQuestion','securityQuestions','temporaryAccessPass' }).Count -eq 0 }; $only = @($r | Where-Object { & $ph @($_.MethodsRegistered) }); ""Users in registration report: $($r.Count)""; if ($r.Count -eq 0) { 'REVIEW: the report returned no users (permission, licence or report delay)' } elseif ($only.Count -gt 0) { ""APPLIES: phone-only users (SMS/voice is their only MFA method): $($only.Count)"" } else { 'NOT FOUND: no phone-only users in the report' }; ""  of which admins (any admin role): $(@($only | Where-Object { $_.IsAdmin }).Count)""; ""  of which guests: $(@($only | Where-Object { $_.UserType -eq 'guest' }).Count)""; $only | Select-Object UserPrincipalName, UserType, IsAdmin, @{n='Methods';e={$_.MethodsRegistered -join ';'}} | Export-Csv -NoTypeInformation -Encoding UTF8 .\phone-only-users.csv; 'Exported .\phone-only-users.csv'
 {code}
 
-Verify: phone-only-users.csv exists, the count is recorded in the tracker with today's date, and the SMS-Voice-Exit group contains those users.
-Licence: Entra ID P1 or P2 for the Authentication methods activity report; permission AuditLog.Read.All; role Reports Reader, Security Reader or Global Reader
-Effort: 30 min",Highest,1,Sprint 1 - Find,sms-mfa-exit sprint-1
-4,Story,[S02] Check where SMS and voice are enabled in the Authentication methods policy,"Why: Users enabled for SMS or voice in the Authentication methods policy or in legacy MFA settings are the ones Microsoft moves into a passkey profile and nudges. Knowing the targets tells you which groups to plan for.
+Verify: phone-only-users.csv exists, the count is recorded in the tracker with today's date, and the SMS-Voice-Exit group contains those users. The report data can lag by up to 36 hours (Learn). The script treats any method whose name contains 'phone' as SMS/voice; Learn lists only examples of method names, so if the count looks wrong compare it with the portal Registration tab. A user whose only other method is a device-bound passkey on another device is counted as safe; review those users by hand. A Temporary Access Pass does not count as a lasting method.
+Licence: Entra ID P1 or P2 for the Authentication methods activity report in the portal (Learn; the Graph report page states no licence); permission AuditLog.Read.All; role Reports Reader, Security Reader or Global Reader
+Effort: 30 min
+Sprint: Sprint 1 - Find
+Sources: https://learn.microsoft.com/en-us/entra/identity/authentication/concept-sms-voice-retirement https://learn.microsoft.com/en-us/entra/identity/authentication/howto-authentication-methods-activity https://learn.microsoft.com/en-us/graph/api/authenticationmethodsroot-list-userregistrationdetails?view=graph-rest-1.0 https://mc.merill.net/message/MC1426371",Highest,1,,runbooklab,rl-entra-sms-mfa-exit-kit,SM01,sprint-1,find
+4,Task,[SM02] Check where SMS and voice are enabled in the Authentication methods policy,"Why: Users enabled for SMS or voice in the Authentication methods policy or in legacy MFA settings are the ones Microsoft moved into passkeys: since 1 September 2026 they are enabled for passkeys automatically, with a passkey profile that allows all passkey types, unless the tenant used the temporary opt-out (SM10). Knowing the targets tells you which groups to plan for.
 
 Steps:
 # Run the read-only check below: it shows the state and include targets of the SMS and Voice methods and the policy migration state.
-# Optional: run Microsoft's own scanner, github.com/microsoft/entra-sms-voice-usage-analyzer (Get-SmsVoicePolicyUsers.ps1). It reads policy scope only; it does not list users.
-# If the migration state is not 'migrationComplete', legacy MFA/SSPR settings may still enable phone methods: review them in the legacy MFA settings page.
+# Optional: run the script Microsoft Learn points to for finding users enabled for SMS or voice: github.com/microsoft/entra-sms-voice-usage-analyzer (roles Global Reader, Authentication Policy Administrator or Security Reader). Microsoft's FAQ: any non-zero result means you are in scope.
+# If the migration state is not 'migrationComplete', the legacy MFA and SSPR policies still apply: review the per-user MFA service settings (Entra ID > Users > Per-user MFA > service settings) and Entra ID > Authentication methods > Policies > Manage migration.
+
+Impact: Nothing changes: the check and Microsoft's script only read the policy.
+
+Rollback: Nothing to undo. If you later change the migration state, Learn says you can move it back to Migration in Progress at any time.
 
 Check (read-only):
 {code:powershell}
 $p = Get-MgPolicyAuthenticationMethodPolicy; foreach ($id in 'Sms','Voice') { $c = Get-MgPolicyAuthenticationMethodPolicyAuthenticationMethodConfiguration -AuthenticationMethodConfigurationId $id; $t = @($c.AdditionalProperties['includeTargets'] | ForEach-Object { $_['id'] }) -join ', '; ""$id method: state=$($c.State); include targets: $t"" }; ""Policy migration state: $($p.PolicyMigrationState)""
 {code}
 
-Verify: You know which groups have SMS/voice enabled and whether the policy migration is complete; both are written in the tracker.
-Licence: Any Entra ID tenant; permission Policy.Read.All
-Effort: 30 min",Highest,1,Sprint 1 - Find,sms-mfa-exit sprint-1
-5,Story,[S03] Enable Passkey (FIDO2) for the affected users,"Why: Passkeys are Microsoft's recommended replacement and moving SMS/voice users to passkeys costs nothing extra. Users can register a passkey in Microsoft Authenticator, a synced passkey (iCloud Keychain, Google Password Manager) or a FIDO2 security key.
+Verify: You know which groups have SMS/voice enabled and whether the policy migration is complete (preMigration, migrationInProgress or migrationComplete); both are written in the tracker. If a line shows ERROR or empty targets, read the method in the portal under Authentication methods > Policies.
+Licence: Any Entra ID tenant; permission Policy.Read.AuthenticationMethod; role Global Reader or Authentication Policy Administrator
+Effort: 30 min
+Sprint: Sprint 1 - Find
+Sources: https://learn.microsoft.com/en-us/entra/identity/authentication/concept-sms-voice-retirement https://learn.microsoft.com/en-us/entra/identity/authentication/concept-sms-voice-retirement-faq https://learn.microsoft.com/en-us/entra/identity/authentication/how-to-authentication-methods-manage https://learn.microsoft.com/en-us/graph/api/smsauthenticationmethodconfiguration-get?view=graph-rest-1.0 https://learn.microsoft.com/en-us/graph/api/authenticationmethodspolicy-get?view=graph-rest-1.0",Highest,1,,runbooklab,rl-entra-sms-mfa-exit-kit,SM02,sprint-1,find
+5,Task,[SM03] Enable Passkey (FIDO2) for the affected users,"Why: Passkeys are Microsoft's recommended replacement and cost nothing extra (Microsoft's FAQ). Passkey (FIDO2) is available in all Entra ID editions, including Free. Since 1 September 2026 Microsoft may already have enabled passkeys for your SMS/voice users; this control makes the setting your own decision.
 
 Steps:
-# Entra admin center > Entra ID > Authentication methods > Policies > Passkey (FIDO2): enable it and include the SMS-Voice-Exit group (or All users).
-# Decide which passkey types you allow (device-bound in Authenticator, synced, hardware keys) and whether to require attestation.
-# Pilot with IT staff first: each pilot user registers one passkey and signs in with it.
+# Entra admin center > Entra ID > Authentication methods > Policies > Passkey (FIDO2). If the banner offers passkey profiles, read the impact line first: once you opt in to passkey profiles you cannot opt out.
+# On Configure, set 'Allow self-service set up' to Yes (the registration campaign in SM04 needs it). In the passkey profile, choose the passkey types you allow (Device-bound, Synced), whether to 'Enforce attestation' and any key restrictions by AAGUID (for example Microsoft Authenticator).
+# Under Enable and Target, include the SMS-Voice-Exit group (or All users) and assign the profile. Pilot with IT staff first: each pilot user registers one passkey in Security info and signs in with it.
+
+Impact: Targeted users can register and sign in with a passkey; they must have completed MFA within the past five minutes before registering. Guests (internal and external) cannot register passkeys yet: Microsoft plans B2B and internal guest support by the end of 2026 (FAQ). Opting in to passkey profiles cannot be undone.
+
+Rollback: Remove the group under Passkey (FIDO2) > Enable and Target, or clear a passkey type in the profile. The opt-in to passkey profiles itself cannot be reversed. Learn warns that disabling synced passkeys in a profile, or removing a previously allowed AAGUID, stops affected users signing in with those passkeys: check the registration report first.
 
 Check (read-only):
 {code:powershell}
 $c = Get-MgPolicyAuthenticationMethodPolicyAuthenticationMethodConfiguration -AuthenticationMethodConfigurationId Fido2; $t = @($c.AdditionalProperties['includeTargets'] | ForEach-Object { $_['id'] }) -join ', '; ""Passkey (FIDO2): state=$($c.State); include targets: $t""
 {code}
 
-Verify: Passkey (FIDO2) state is enabled and its include targets cover the SMS-Voice-Exit group; at least the pilot users show a passkey in the registration report.
-Licence: Any Entra ID tenant
-Effort: 1 h",Highest,2,Sprint 1 - Find,sms-mfa-exit sprint-1
-6,Story,[S04] Run a registration campaign for passkeys aimed at the affected group,"Why: The registration campaign prompts users at their next MFA sign-in. Snoozes are unlimited by default, so without a plan users keep postponing until the blocking prompt on the retirement date.
+Verify: Passkey (FIDO2) state is enabled and its include targets cover the SMS-Voice-Exit group; the profile assignment is shown in the portal under Enable and Target; at least the pilot users show a passkey in the registration report.
+Licence: Any Entra ID tenant (Learn: all Microsoft Entra ID editions, including Free); permission Policy.Read.AuthenticationMethod for the check
+Effort: 1 h
+Sprint: Sprint 1 - Find
+Sources: https://learn.microsoft.com/en-us/entra/identity/authentication/how-to-authentication-passkeys-fido2 https://learn.microsoft.com/en-us/entra/identity/authentication/concept-sms-voice-retirement-faq",Highest,2,,runbooklab,rl-entra-sms-mfa-exit-kit,SM03,sprint-1,move
+6,Task,[SM04] Run a registration campaign for passkeys aimed at the affected group,"Why: The registration campaign prompts users after an MFA sign-in. Since 1 September 2026 Microsoft may run it for you as 'Microsoft managed' with unlimited snoozes, so without your own settings users can keep skipping until the blocking prompt on the retirement date.
 
 Steps:
-# Entra admin center > Entra ID > Authentication methods > Registration campaign (role: Authentication Policy Administrator).
-# Target the SMS-Voice-Exit group and the passkey method; review the snooze settings and set a date by which you stop allowing snoozes.
-# Tell users before the prompt appears (see S05).
+# Entra admin center > Entra ID > Authentication methods > Registration campaign > Edit (role: at least Authentication Policy Administrator).
+# Target the SMS-Voice-Exit group and the Passkey method ('Allow self-service set up' must be Yes in SM03). To stop endless skipping, set State to Enabled and turn on 'Limited number of snoozes'; days allowed to snooze can be 0 to 14.
+# Tell users before the prompt appears (see SM05).
+
+Impact: After an MFA sign-in, targeted users see a passkey setup prompt with 'Skip for now' until their snoozes run out; closing the browser counts as a snooze. Learn lists users who are not prompted, among them guests (for passkeys) and Linux users.
+
+Rollback: Set State back to Microsoft managed or Disabled and Save. Users' snooze counts persist across campaign restarts (Learn).
 
 Check (read-only):
 {code:powershell}
-$rc = (Get-MgPolicyAuthenticationMethodPolicy).RegistrationEnforcement.AuthenticationMethodsRegistrationCampaign; ""Registration campaign state: $($rc.State)""; ""Snooze duration (days): $($rc.SnoozeDurationInDays)""; ""Targets: $(@($rc.IncludeTargets | ForEach-Object { ""$($_.Id) -> $($_.TargetedAuthenticationMethod)"" }) -join '; ')""
+$rc = (Get-MgPolicyAuthenticationMethodPolicy).RegistrationEnforcement.AuthenticationMethodsRegistrationCampaign; ""Registration campaign state: $($rc.State)""; ""Snooze duration (days): $($rc.SnoozeDurationInDays)""; ""Limited snoozes (enforce after allowed snoozes): $($rc.EnforceRegistrationAfterAllowedSnoozes)""; ""Targets: $(@($rc.IncludeTargets | ForEach-Object { ""$($_.Id) -> $($_.TargetedAuthenticationMethod)"" }) -join '; ')""
 {code}
 
-Verify: The campaign is enabled and targets the SMS-Voice-Exit group; the phone-only count from S01 goes down week by week.
-Licence: Any Entra ID tenant
-Effort: 30 min",High,2,Sprint 2 - Move,sms-mfa-exit sprint-2
-7,Story,"[S05] Tell users in three waves: awareness, action, reminder","Why: Users who register before the date avoid a blocking prompt on a busy morning, and the helpdesk avoids a spike of lock-outs.
+Verify: The campaign is enabled and targets the SMS-Voice-Exit group with the passkey method (Graph value fido2); the phone-only count from SM01 goes down week by week. If a line is empty, read the same settings in the portal.
+Licence: Any Entra ID tenant (no licence requirement is stated on the Learn page); permission Policy.Read.AuthenticationMethod for the check
+Effort: 30 min
+Sprint: Sprint 2 - Move
+Sources: https://learn.microsoft.com/en-us/entra/identity/authentication/how-to-mfa-registration-campaign https://learn.microsoft.com/en-us/entra/identity/authentication/concept-sms-voice-retirement https://learn.microsoft.com/en-us/graph/api/authenticationmethodspolicy-get?view=graph-rest-1.0",High,2,,runbooklab,rl-entra-sms-mfa-exit-kit,SM04,sprint-2,move
+7,Task,"[SM05] Tell users in three waves: awareness, action, reminder","Why: Users who register before the date avoid a blocking prompt on a busy morning, and the helpdesk avoids a spike of lock-outs.
 
 Steps:
-# Use Microsoft's end-user templates (aka.ms/mfatemplates) and adapt them: what changes, by when, how long it takes.
-# Wave 1 awareness (now), wave 2 action with step-by-step registration per device type (iPhone, Android, Windows, hardware key), wave 3 reminders to whoever is still in phone-only-users.csv.
-# Give the helpdesk a short script for 'I got a passkey prompt and can't continue'.
+# Use Microsoft's end-user communication templates (aka.ms/mfatemplates, linked from the retirement page) and adapt them: what changes, by when, how long it takes. Send them to the SMS-Voice-Exit group.
+# Wave 1 awareness (now), wave 2 action with step-by-step registration per device type (Windows Hello, iPhone, Android, security key), wave 3 reminders to whoever is still in phone-only-users.csv.
+# Give the helpdesk a short script for 'I got a passkey prompt and can't continue': after the date the prompt cannot be skipped, and closing the page or restarting sign-in does not remove it.
 
-Verify: Three messages are scheduled with dates before 1 February 2027 and the helpdesk script is published.
+Impact: Nothing changes in the tenant. Users learn what to do before the prompt appears.
+
+Rollback: Not applicable: cancel or correct a scheduled message if a date changes.
+
+Verify: Three messages are scheduled with dates before 1 February 2027 (and before 1 July 2027 for Global Administrators and external users) and the helpdesk script is published.
 Licence: None
-Effort: 2 h",High,2,Sprint 2 - Move,sms-mfa-exit sprint-2
+Effort: 2 h
+Sprint: Sprint 2 - Move
+Sources: https://learn.microsoft.com/en-us/entra/identity/authentication/concept-sms-voice-retirement",High,2,,runbooklab,rl-entra-sms-mfa-exit-kit,SM05,sprint-2,move
