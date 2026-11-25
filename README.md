@@ -1,5 +1,9 @@
 # Entra SMS MFA Exit Kit: Top 5 (free)
 
+[![Entra SMS MFA Exit Kit: Top 5 (free)](assets/cover.png)](https://runbooklabhq.com/kits/sms-mfa-exit/)
+
+**[Every control on the kit page](https://runbooklabhq.com/kits/sms-mfa-exit/)** · [Microsoft 365 deadline calendar](https://runbooklabhq.com/guides/deadlines/) · [Runbook Lab](https://runbooklabhq.com/)
+
 Microsoft retires its own SMS and voice MFA on **1 February 2027** for all users except Global Administrators and external users (internal guests included), and on **1 July 2027** for Global Administrators and external users. The July date applies only while the Global Administrator role is active; users only eligible for it follow 1 February 2027. After the date, users whose only MFA method is SMS or voice get a blocking prompt to register a passkey. There is no opt-out for enforcement. Sources: Microsoft Learn, "Passkeys by default and retirement of Microsoft-provided SMS and voice authentication", and message center post MC1426371.
 
 This kit is the first five steps as a ready-to-run project:
